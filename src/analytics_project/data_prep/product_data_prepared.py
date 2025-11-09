@@ -1,129 +1,72 @@
 import csv
-import statistics
 from typing import List, Dict
+import statistics
+from analytics_project.data_prep.data_scrubber import (
+    standardize_id,
+    clean_string,
+    standardize_numeric,
+    remove_outliers as remove_outliers_generic,
+    handle_missing_values as handle_missing_values_generic
+)
 
 def handle_missing_values(data: List[Dict]) -> List[Dict]:
     """Handle missing values in the product data."""
-    cleaned_data = []
-    for row in data:
-        # Replace empty strings with None
-        row = {k: (None if v == '' else v) for k, v in row.items()}
-        
-        # Skip rows with too many missing values (more than 50%)
-        if sum(1 for v in row.values() if v is None) > len(row) / 2:
-            continue
-            
-        # Skip rows with missing critical fields
-        if row['ProductID'] is None or row['ProductName'] is None:
-            continue
-            
-        # Fill missing values with appropriate defaults
-        defaults = {
-            'Category': 'Uncategorized',
-            'UnitPrice': '0.00',
-            'Model': '1',
-            'Branch': 'Main'
-        }
-        
-        for field, default in defaults.items():
-            if field in row and row[field] is None:
-                row[field] = default
-                
-        cleaned_data.append(row)
-    return cleaned_data
+    # Define defaults for product data
+    defaults = {
+        'Category': 'Uncategorized',
+        'UnitPrice': '0.00',
+        'Model': '1',
+        'Branch': 'Main'
+    }
+    
+    required_fields = ['ProductID', 'ProductName']
+    return handle_missing_values_generic(data, defaults, required_fields)
 
 def remove_outliers(data: List[Dict]) -> List[Dict]:
     """Remove price outliers using IQR method."""
-    cleaned_data = []
-    
-    # Convert prices to float for analysis
-    prices = [float(row['UnitPrice']) for row in data if row['UnitPrice']]
-    
-    # Calculate Q1, Q3 and IQR for prices
-    q1 = statistics.quantiles(prices, n=4)[0]
-    q3 = statistics.quantiles(prices, n=4)[2]
-    iqr = q3 - q1
-    
-    # Define outlier bounds
-    lower_bound = max(0, q1 - 1.5 * iqr)  # Don't allow negative prices
-    upper_bound = q3 + 1.5 * iqr
-    
-    # Filter out price outliers
-    for row in data:
-        if row['UnitPrice']:
-            price = float(row['UnitPrice'])
-            if lower_bound <= price <= upper_bound:
-                cleaned_data.append(row)
-    
-    return cleaned_data
+    return remove_outliers_generic(data, 'UnitPrice', method='iqr', threshold=1.5)
 
 def standardize_format(data: List[Dict]) -> List[Dict]:
     """Standardize data formats."""
     standardized_data = []
     
-    # Define category mapping for consistency
+    # Define category and branch mappings
     category_mapping = {
         'electronics': 'Electronics',
-        'ELECTRONICS': 'Electronics',
         'clothing': 'Clothing',
-        'CLOTHING': 'Clothing',
         'home': 'Home',
-        'HOME': 'Home',
-        'office': 'Office',
-        'OFFICE': 'Office'
+        'office': 'Office'
     }
     
-    # Define branch name standardization
     branch_mapping = {
-        'LA': 'Los Angeles',
-        'Ll': 'Los Angeles',
-        'La': 'Los Angeles',
+        'la': 'Los Angeles',
         'l.a.': 'Los Angeles',
-        'L.A.': 'Los Angeles',
-        'New York': 'New York',
-        'NY': 'New York',
-        'N.Y.': 'New York',
         'ny': 'New York',
-        'Main': 'Main'
+        'n.y.': 'New York'
     }
     
     for row in data:
         std_row = {}
         
         for key, value in row.items():
-            if value is None:
-                std_row[key] = value
-                continue
-                
             if key == 'ProductID':
-                # Ensure 4-digit product ID with leading zeros
-                std_row[key] = str(int(value)).zfill(4)
+                std_row[key] = standardize_id(value, width=4)
             elif key == 'ProductName':
-                # Convert hyphenated names to space-separated and proper case
-                words = value.replace('-', ' ').strip().split()
-                std_row[key] = ' '.join(word.capitalize() for word in words)
+                std_row[key] = clean_string(value).replace('-', ' ')
             elif key == 'Category':
-                # Standardize category names
-                std_row[key] = category_mapping.get(value.lower(), value.title())
+                # Use clean_string but apply category mapping
+                cleaned = clean_string(value).lower()
+                std_row[key] = category_mapping.get(cleaned, clean_string(value))
             elif key == 'UnitPrice':
-                # Format price to 2 decimal places
-                std_row[key] = f"{float(value):.2f}"
+                std_row[key] = standardize_numeric(value, min_value=0)
             elif key == 'Model':
-                # Ensure model is a single digit
-                std_row[key] = str(int(value))
+                std_row[key] = standardize_id(value, width=1)
             elif key == 'Branch':
-                # Standardize branch names
-                clean_value = value.strip()
-                # Try exact match first
-                if clean_value in branch_mapping:
-                    std_row[key] = branch_mapping[clean_value]
-                else:
-                    # Try case-insensitive match
-                    matches = [v for k, v in branch_mapping.items() 
-                             if k.lower() == clean_value.lower()]
-                    std_row[key] = matches[0] if matches else value.title()
+                # Use clean_string but apply branch mapping
+                cleaned = clean_string(value).lower()
+                std_row[key] = branch_mapping.get(cleaned, clean_string(value))
             else:
-                std_row[key] = value
+                std_row[key] = clean_string(value)
                 
         standardized_data.append(std_row)
     
