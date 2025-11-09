@@ -60,8 +60,18 @@ python -m pytest -q
 The data preparation pipeline was improved and documented. Key changes pushed to GitHub:
 
 - Added/updated data-prep scripts (location: `src/analytics_project/data_prep`):
-    - `customer_data_prepared.py` — cleaned and standardized customer data.
-    - `product_data_prepared.py` — cleaned and standardized product data.
+    - `customer_data_prepared.py` — customer data cleaning and standardization. Key behaviors:
+        - Normalizes `CustomerID` to 6-digit zero-padded format for consistent joins
+        - Standardizes join dates to `YYYY-MM-DD` (robust parsing with fallbacks)
+        - Validates and coerces `Age` to integers, fills or clips invalid values
+        - Normalizes `Region`/`Division` names and trims whitespace
+        - Removes duplicates and writes cleaned customer CSV for downstream validation
+    - `product_data_prepared.py` — product data cleaning and normalization. Key behaviors:
+        - Normalizes `ProductID` to 4-digit zero-padded format
+        - Cleans `ProductName` and `Category` strings (trim, title-case)
+        - Coerces `UnitPrice` to 2-decimal numeric format and fills missing prices
+        - Validates `Model`/`Branch` fields and fills safe defaults where missing
+        - Removes duplicate product entries and writes cleaned product CSV for lookups
     - `sales_data_prepared.py` — completed sales cleaning pipeline with:
         - Customer/Product ID format standardization for cross-file validation
         - Robust missing-value handling (treats `?`, empty strings, commas)
