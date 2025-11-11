@@ -1,285 +1,199 @@
 import csv
+import os
 import statistics
 from datetime import datetime
 from typing import List, Dict
 
+from analytics_project.data_prep.data_scrubber import (
+    standardize_id,
+    clean_string,
+    standardize_numeric,
+    standardize_date,
+    remove_outliers as remove_outliers_generic,
+    handle_missing_values as handle_missing_values_generic,
+    remove_duplicates as remove_duplicates_generic,
+)
+
+
 def handle_missing_values(data: List[Dict]) -> List[Dict]:
-    """Handle missing values in the sales data."""
-    cleaned_data = []
-    for row in data:
-        # Replace empty strings, ',' and '?' with None
-        row = {k: (None if v in ['', ',', '?'] else v) for k, v in row.items()}
-        
-        # Skip rows with missing TransactionID (our primary key)
-        if row.get('TransactionID') is None:
-            continue
-            
-        # Set defaults for missing values
-        defaults = {
-            'CustomerID': '000000',
-            'ProductID': '0000',
-            'StoreID': '000',
-            'CampaignID': '0',
-            'SaleAmount': '0.00',
-            'Expenses': '0.00',
-            'Coast': 'Unknown'
-        }
-        
-        for field, default in defaults.items():
-            if field in row and (row[field] is None or row[field] == '?'):
-                row[field] = default
-            
-        # Fill missing values with appropriate defaults
-        defaults = {
-            'PaymentMethod': 'Unknown',
-            'Discount': '0.00',
-            'Status': 'Completed'
-        }
-        
-        for field, default in defaults.items():
-            if field in row and (row[field] is None or row[field] == '?'):
-                row[field] = default
-                
-        cleaned_data.append(row)
-    return cleaned_data
+    """Delegate missing-value handling to the shared utility with sensible defaults."""
+    defaults = {
+        'CustomerID': '000000',
+        'ProductID': '0000',
+        'StoreID': '000',
+        'CampaignID': '0',
+        'SaleAmount': '0.00',
+        'Expenses': '0.00',
+        'Coast': 'Unknown',
+        'PaymentMethod': 'Unknown',
+        'Discount': '0.00',
+        'Status': 'Completed',
+    }
+
+    required = ['TransactionID']
+    return handle_missing_values_generic(data, defaults, required)
+
 
 def validate_relationships(data: List[Dict]) -> List[Dict]:
-    """Validate customer and product IDs against their respective files."""
+    """Validate that CustomerID and ProductID exist in cleaned reference data.
+
+    Falls back to trusting sales file IDs if reference files are missing.
+    """
     valid_data = []
     initial_count = len(data)
     print(f"Initial record count before validation: {initial_count}")
-    
-    def standardize_customer_id(cid: str) -> str:
-        """Standardize customer ID to 6-digit format."""
-        try:
-            return str(int(cid)).zfill(6)
-        except (ValueError, TypeError):
-            return cid
-            
-    def standardize_product_id(pid: str) -> str:
-        """Standardize product ID to 4-digit format."""
-        try:
-            return str(int(pid)).zfill(4)
-        except (ValueError, TypeError):
-            return pid
-    
-    # Read customer IDs from cleaned customer data
+
+    def std_cust(cid: str) -> str:
+        return standardize_id(cid, width=6)
+
+    def std_prod(pid: str) -> str:
+        return standardize_id(pid, width=4)
+
+    # Load reference customer ids
     customer_ids = set()
+    cust_ref = os.path.join('Data', 'Processed', 'customers_data_cleaned.csv')
     try:
-        with open("../../../Data/Processed/customers_data_cleaned.csv", 'r') as f:
-            customer_reader = csv.DictReader(f)
-            customer_ids = {standardize_customer_id(row['CustomerID']) for row in customer_reader}
+        with open(cust_ref, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            customer_ids = {std_cust(r.get('CustomerID')) for r in reader}
             print(f"Found {len(customer_ids)} valid customer IDs")
     except FileNotFoundError:
         print("Warning: Cleaned customers data not found. Skipping customer validation.")
-        customer_ids = {standardize_customer_id(row['CustomerID']) for row in data}  # Use all customer IDs as valid
+        customer_ids = {std_cust(r.get('CustomerID')) for r in data}
         print(f"Using {len(customer_ids)} customer IDs from sales data")
-    
-    # Read product IDs from cleaned product data
+
+    # Load reference product ids
     product_ids = set()
+    prod_ref = os.path.join('Data', 'Processed', 'products_data_cleaned.csv')
     try:
-        with open("../../../Data/Processed/products_data_cleaned.csv", 'r') as f:
-            product_reader = csv.DictReader(f)
-            product_ids = {standardize_product_id(row['ProductID']) for row in product_reader}
+        with open(prod_ref, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            product_ids = {std_prod(r.get('ProductID')) for r in reader}
             print(f"Found {len(product_ids)} valid product IDs")
     except FileNotFoundError:
         print("Warning: Cleaned products data not found. Skipping product validation.")
-        product_ids = {standardize_product_id(row['ProductID']) for row in data}  # Use all product IDs as valid
+        product_ids = {std_prod(r.get('ProductID')) for r in data}
         print(f"Using {len(product_ids)} product IDs from sales data")
-    
-    # Print some sample IDs for debugging
-    print("\nSample standardized customer IDs from reference data:", list(sorted(customer_ids))[:5])
-    print("Sample standardized product IDs from reference data:", list(sorted(product_ids))[:5])
-    
-    # Validate relationships
+
+    print("\nSample standardized customer IDs:", list(sorted(customer_ids))[:5])
+    print("Sample standardized product IDs:", list(sorted(product_ids))[:5])
+
     invalid_customers = set()
     invalid_products = set()
+
     for row in data:
-        valid = True
-        std_cust_id = standardize_customer_id(row['CustomerID'])
-        std_prod_id = standardize_product_id(row['ProductID'])
-        
-        if std_cust_id not in customer_ids:
-            invalid_customers.add(std_cust_id)
-            valid = False
-        if std_prod_id not in product_ids:
-            invalid_products.add(std_prod_id)
-            valid = False
-        if valid:
+        std_c = std_cust(row.get('CustomerID'))
+        std_p = std_prod(row.get('ProductID'))
+
+        ok = True
+        if std_c not in customer_ids:
+            invalid_customers.add(std_c)
+            ok = False
+        if std_p not in product_ids:
+            invalid_products.add(std_p)
+            ok = False
+
+        if ok:
             valid_data.append(row)
-    
+
     if invalid_customers:
         print("\nInvalid Customer IDs found (standardized):")
-        print(', '.join(sorted(invalid_customers)[:10]), '...' if len(invalid_customers) > 10 else '')
-    
+        print(', '.join(sorted(list(invalid_customers))[:10]), '...' if len(invalid_customers) > 10 else '')
+
     if invalid_products:
         print("\nInvalid Product IDs found (standardized):")
-        print(', '.join(sorted(invalid_products)[:10]), '...' if len(invalid_products) > 10 else '')
-    
-    print(f"\nValid records after validation: {len(valid_data)} ({len(valid_data)/initial_count*100:.1f}%)")        
+        print(', '.join(sorted(list(invalid_products))[:10]), '...' if len(invalid_products) > 10 else '')
+
+    print(f"\nValid records after validation: {len(valid_data)} ({len(valid_data)/initial_count*100:.1f}%)")
     return valid_data
 
+
 def remove_outliers(data: List[Dict]) -> List[Dict]:
-    """Remove outliers from sales amount and expenses using IQR method."""
-    cleaned_data = data.copy()
-    
+    """Remove outliers from sales amount and expenses using shared utility."""
+    cleaned = data
     for field in ['SaleAmount', 'Expenses']:
-        values = [float(row[field]) for row in data]
-        
-        # Calculate Q1, Q3 and IQR
-        q1 = statistics.quantiles(values, n=4)[0]
-        q3 = statistics.quantiles(values, n=4)[2]
-        iqr = q3 - q1
-        
-        # Define outlier bounds
-        lower_bound = max(0, q1 - 1.5 * iqr)  # Don't allow negative values
-        upper_bound = q3 + 1.5 * iqr
-        
-        # Filter out outliers
-        cleaned_data = [row for row in cleaned_data 
-                       if lower_bound <= float(row[field]) <= upper_bound]
-    
-    return cleaned_data
+        # use IQR and ensure non-negative floor inside the scrubber via min_value
+        cleaned = remove_outliers_generic(cleaned, field, method='iqr', threshold=1.5)
+    return cleaned
+
 
 def standardize_format(data: List[Dict]) -> List[Dict]:
-    """Standardize data formats."""
-    standardized_data = []
-    today = datetime.now().strftime('%Y-%m-%d')  # Default to today for invalid dates
-    
+    """Standardize fields using shared scrubber helpers."""
+    standardized = []
     for row in data:
-        std_row = {}
-        
-        for key, value in row.items():
-            # Handle None and '?' values
-            if value is None or value == '?':
-                if key in ['SaleDate']:
-                    std_row[key] = today  # Use today's date for missing dates
-                elif key in ['SaleAmount', 'Expenses']:
-                    std_row[key] = '0.00'  # Use 0.00 for missing amounts
-                else:
-                    std_row[key] = None
+        r = {}
+        # IDs
+        r['TransactionID'] = standardize_id(row.get('TransactionID'), width=6)
+        r['CustomerID'] = standardize_id(row.get('CustomerID'), width=6)
+        r['ProductID'] = standardize_id(row.get('ProductID'), width=4)
+
+        # Dates
+        r['SaleDate'] = standardize_date(row.get('SaleDate'))
+
+        # Numerics
+        r['SaleAmount'] = standardize_numeric(row.get('SaleAmount'), default=0.0, min_value=0.0, decimals=2)
+        r['Expenses'] = standardize_numeric(row.get('Expenses'), default=0.0, min_value=0.0, decimals=2)
+
+        # Other small fields
+        r['Coast'] = clean_string(row.get('Coast'), default='Unknown')
+        r['StoreID'] = standardize_id(row.get('StoreID'), width=3)
+        r['CampaignID'] = standardize_numeric(row.get('CampaignID'), default=0.0, decimals=0)
+
+        # Preserve any additional fields present in the input
+        for key, val in row.items():
+            if key in r:
                 continue
-            
-            if key == 'TransactionID':
-                # Ensure 6-digit transaction ID
-                try:
-                    std_row[key] = str(int(value)).zfill(6)
-                except ValueError:
-                    std_row[key] = '000000'
-            elif key == 'CustomerID':
-                # Ensure 6-digit customer ID
-                try:
-                    std_row[key] = str(int(value)).zfill(6)
-                except ValueError:
-                    std_row[key] = '000000'
-            elif key == 'ProductID':
-                # Ensure 4-digit product ID
-                try:
-                    std_row[key] = str(int(value)).zfill(4)
-                except ValueError:
-                    std_row[key] = '0000'
-            elif key == 'SaleDate':
-                # Standardize date format to YYYY-MM-DD
-                try:
-                    date = datetime.strptime(str(value), '%m/%d/%Y')
-                    std_row[key] = date.strftime('%Y-%m-%d')
-                except ValueError:
-                    try:
-                        date = datetime.strptime(str(value), '%Y-%m-%d')
-                        std_row[key] = value
-                    except ValueError:
-                        std_row[key] = today  # Use today's date for invalid dates
-            elif key == 'SaleAmount':
-                # Format to 2 decimal places
-                try:
-                    std_row[key] = f"{float(value):.2f}"
-                except ValueError:
-                    std_row[key] = '0.00'
-            elif key == 'Expenses':
-                # Format to 2 decimal places
-                try:
-                    std_row[key] = f"{float(value):.2f}"
-                except ValueError:
-                    std_row[key] = '0.00'
-            elif key == 'Coast':
-                # Standardize coast names
-                std_row[key] = str(value).strip().title() or 'Unknown'
-            elif key == 'StoreID':
-                # Ensure 3-digit store ID
-                try:
-                    std_row[key] = str(int(value)).zfill(3)
-                except ValueError:
-                    std_row[key] = '000'
-            elif key == 'CampaignID':
-                # Ensure campaign ID is a single digit
-                try:
-                    std_row[key] = str(int(value))
-                except ValueError:
-                    std_row[key] = '0'
-            else:
-                std_row[key] = str(value).strip()
-                
-        standardized_data.append(std_row)
-    
-    return standardized_data
+            r[key] = val if val is not None else ''
+
+        standardized.append(r)
+
+    return standardized
+
 
 def remove_duplicates(data: List[Dict]) -> List[Dict]:
-    """Remove duplicate sales records based on TransactionID."""
-    seen_ids = set()
-    unique_data = []
-    
-    for row in data:
-        if row['TransactionID'] not in seen_ids:
-            seen_ids.add(row['TransactionID'])
-            unique_data.append(row)
-            
-    return unique_data
+    """Remove duplicates using the shared utility keyed on TransactionID."""
+    return remove_duplicates_generic(data, 'TransactionID')
+
 
 def generate_summary(data: List[Dict]) -> None:
-    """Generate and print a summary of the cleaned sales data."""
+    """Print a concise summary of the cleaned sales data (keeps same metrics)."""
     print("\nSales Data Cleaning Summary:")
     print("=" * 50)
-    
-    # Record counts
+
     print(f"Total sales records processed: {len(data)}")
-    
-    # Date range
+
     dates = [datetime.strptime(row['SaleDate'], '%Y-%m-%d') for row in data]
     print("\nDate Range:")
     print(f"  Earliest Sale: {min(dates).strftime('%Y-%m-%d')}")
     print(f"  Latest Sale: {max(dates).strftime('%Y-%m-%d')}")
-    
-    # Coast distribution
+
     coasts = {}
     for row in data:
-        coast = row['Coast']
+        coast = row.get('Coast', 'Unknown')
         coasts[coast] = coasts.get(coast, 0) + 1
-    
+
     print("\nCoast Distribution:")
     for coast, count in sorted(coasts.items()):
         print(f"  {coast}: {count} sales ({count/len(data)*100:.1f}%)")
-    
-    # Store distribution
+
     stores = {}
     for row in data:
-        store = row['StoreID']
+        store = row.get('StoreID', '000')
         stores[store] = stores.get(store, 0) + 1
-    
+
     print("\nStore Distribution:")
     for store, count in sorted(stores.items()):
         print(f"  Store {store}: {count} sales ({count/len(data)*100:.1f}%)")
-    
-    # Campaign distribution
+
     campaigns = {}
     for row in data:
-        campaign = row['CampaignID']
+        campaign = row.get('CampaignID', '0')
         campaigns[campaign] = campaigns.get(campaign, 0) + 1
-    
+
     print("\nCampaign Distribution:")
     for campaign, count in sorted(campaigns.items()):
         print(f"  Campaign {campaign}: {count} sales ({count/len(data)*100:.1f}%)")
-    
-    # Sales statistics
+
     amounts = [float(row['SaleAmount']) for row in data]
     print("\nSales Amount Statistics:")
     print(f"  Average Amount: ${statistics.mean(amounts):.2f}")
@@ -287,8 +201,7 @@ def generate_summary(data: List[Dict]) -> None:
     print(f"  Total Sales: ${sum(amounts):.2f}")
     print(f"  Min Amount: ${min(amounts):.2f}")
     print(f"  Max Amount: ${max(amounts):.2f}")
-    
-    # Expenses statistics
+
     expenses = [float(row['Expenses']) for row in data]
     print("\nExpenses Statistics:")
     print(f"  Average Expenses: ${statistics.mean(expenses):.2f}")
@@ -296,37 +209,45 @@ def generate_summary(data: List[Dict]) -> None:
     print(f"  Total Expenses: ${sum(expenses):.2f}")
     print(f"  Min Expenses: ${min(expenses):.2f}")
     print(f"  Max Expenses: ${max(expenses):.2f}")
-    
+
     print("=" * 50)
 
-# Path to the raw sales data file
-input_file = "../../../Data/Raw/sales_data.csv"
-output_file = "../../../Data/Processed/sales_data_cleaned.csv"
 
-# Read and process the CSV file
-with open(input_file, mode='r') as file:
-    csv_reader = csv.DictReader(file)
-    sales_data = list(csv_reader)
+def process_sales_data(input_file: str, output_file: str) -> List[Dict]:
+    """Top-level runner to process sales CSV file and write cleaned data."""
+    if not os.path.exists(input_file):
+        raise FileNotFoundError(f"Input file not found: {input_file}")
 
-print(f"Loaded {len(sales_data)} sales records.")
+    with open(input_file, mode='r', newline='') as f:
+        reader = csv.DictReader(f)
+        sales = list(reader)
 
-# Clean the data
-print("Cleaning data...")
-cleaned_data = handle_missing_values(sales_data)
-cleaned_data = validate_relationships(cleaned_data)
-cleaned_data = remove_outliers(cleaned_data)
-cleaned_data = standardize_format(cleaned_data)
-cleaned_data = remove_duplicates(cleaned_data)
+    print(f"Loaded {len(sales)} sales records.")
 
-# Generate summary
-generate_summary(cleaned_data)
+    cleaned = handle_missing_values(sales)
+    cleaned = validate_relationships(cleaned)
+    cleaned = remove_outliers(cleaned)
+    cleaned = standardize_format(cleaned)
+    cleaned = remove_duplicates(cleaned)
 
-# Write the cleaned data to a new CSV file
-with open(output_file, mode='w', newline='') as file:
-    if cleaned_data:
-        fieldnames = cleaned_data[0].keys()
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(cleaned_data)
+    # Ensure output directory exists
+    out_dir = os.path.dirname(os.path.abspath(output_file))
+    os.makedirs(out_dir, exist_ok=True)
 
-print(f"\nCleaned data saved to: {output_file}")
+    with open(output_file, mode='w', newline='') as f:
+        if cleaned:
+            fieldnames = cleaned[0].keys()
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(cleaned)
+
+    print(f"\nCleaned data saved to: {output_file}")
+    return cleaned
+
+
+if __name__ == '__main__':
+    in_file = os.path.join('Data', 'Raw', 'sales_data.csv')
+    out_file = os.path.join('Data', 'Processed', 'sales_data_cleaned.csv')
+    cleaned = process_sales_data(in_file, out_file)
+    generate_summary(cleaned)
+
