@@ -14,6 +14,7 @@ def _make_logger():
 
 logger = _make_logger()
 
+
 def init_logger(*, level=logging.INFO):
     logger.setLevel(level)
     return logger

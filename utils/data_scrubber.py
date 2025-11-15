@@ -6,6 +6,7 @@ class DataScrubber:
 
     This is a simplified implementation so the example scripts can run.
     """
+
     def __init__(self, df: pd.DataFrame):
         self.df = df.copy()
 

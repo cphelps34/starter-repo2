@@ -1,6 +1,6 @@
 import csv
-import sys
 import os
+import sys
 
 # Ensure `src/` is on sys.path so test can import the package when it's not
 # installed in the environment (editable install). This keeps tests local and

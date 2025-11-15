@@ -1,7 +1,7 @@
 """
 scripts/data_preparation/prepare_sales.py
 
-This script reads data from the data/raw folder, cleans the data, 
+This script reads data from the data/raw folder, cleans the data,
 and writes the cleaned version to the data/prepared folder.
 
 Tasks:
@@ -27,18 +27,19 @@ import pandas as pd
 sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent))
 
 # Import local modules (e.g. utils/logger.py)
-from utils.logger import logger  
+from utils.logger import logger
 
 # Optional: Use a data_scrubber module for common data cleaning tasks
-from utils.data_scrubber import DataScrubber  
 
 
 # Constants
-SCRIPTS_DATA_PREP_DIR: pathlib.Path = pathlib.Path(__file__).resolve().parent  # Directory of the current script
-SCRIPTS_DIR: pathlib.Path = SCRIPTS_DATA_PREP_DIR.parent 
-PROJECT_ROOT: pathlib.Path = SCRIPTS_DIR.parent 
-DATA_DIR: pathlib.Path = PROJECT_ROOT/ "data" 
-RAW_DATA_DIR: pathlib.Path = DATA_DIR / "raw"  
+SCRIPTS_DATA_PREP_DIR: pathlib.Path = (
+    pathlib.Path(__file__).resolve().parent
+)  # Directory of the current script
+SCRIPTS_DIR: pathlib.Path = SCRIPTS_DATA_PREP_DIR.parent
+PROJECT_ROOT: pathlib.Path = SCRIPTS_DIR.parent
+DATA_DIR: pathlib.Path = PROJECT_ROOT / "data"
+RAW_DATA_DIR: pathlib.Path = DATA_DIR / "raw"
 PREPARED_DATA_DIR: pathlib.Path = DATA_DIR / "prepared"  # place to store prepared data
 
 
@@ -53,13 +54,14 @@ PREPARED_DATA_DIR.mkdir(exist_ok=True)
 
 # TODO: Complete this by implementing functions based on the logic in the other scripts
 
+
 def read_raw_data(file_name: str) -> pd.DataFrame:
     """
     Read raw data from CSV.
 
     Args:
         file_name (str): Name of the CSV file to read.
-    
+
     Returns:
         pd.DataFrame: Loaded DataFrame.
     """
@@ -68,19 +70,20 @@ def read_raw_data(file_name: str) -> pd.DataFrame:
     logger.info(f"Reading data from {file_path}")
     df = pd.read_csv(file_path)
     logger.info(f"Loaded dataframe with {len(df)} rows and {len(df.columns)} columns")
-    
+
     # TODO: OPTIONAL Add data profiling here to understand the dataset
     # Suggestion: Log the datatypes of each column and the number of unique values
     # Example:
     # logger.info(f"Column datatypes: \n{df.dtypes}")
     # logger.info(f"Number of unique values: \n{df.nunique()}")
-    
+
     return df
 
 
 #####################################
 # Define Main Function - The main entry point of the script
 #####################################
+
 
 def main() -> None:
     """
@@ -96,8 +99,7 @@ def main() -> None:
     logger.info(f"scripts      : {SCRIPTS_DIR}")
 
     input_file = "sales_data.csv"
-    output_file = "sales_prepared.csv"
-    
+
     # Read raw data
     df = read_raw_data(input_file)
 
@@ -107,13 +109,17 @@ def main() -> None:
     # Log initial dataframe information
     logger.info(f"Initial dataframe columns: {', '.join(df.columns.tolist())}")
     logger.info(f"Initial dataframe shape: {df.shape}")
-    
+
     # Clean column names
     original_columns = df.columns.tolist()
     df.columns = df.columns.str.strip()
-    
+
     # Log if any column names changed
-    changed_columns = [f"{old} -> {new}" for old, new in zip(original_columns, df.columns) if old != new]
+    changed_columns = [
+        f"{old} -> {new}"
+        for old, new in zip(original_columns, df.columns)
+        if old != new
+    ]
     if changed_columns:
         logger.info(f"Cleaned column names: {', '.join(changed_columns)}")
 
@@ -124,7 +130,6 @@ def main() -> None:
     # TODO:Remove outliers
 
     # TODO:Save prepared data
-    
 
     logger.info("==================================")
     logger.info(f"Original shape: {df.shape}")
@@ -133,8 +138,9 @@ def main() -> None:
     logger.info("FINISHED prepare_sales_data.py")
     logger.info("==================================")
 
+
 #####################################
-# Conditional Execution Block 
+# Conditional Execution Block
 # Ensures the script runs only when executed directly
 # This is a common Python convention.
 #####################################

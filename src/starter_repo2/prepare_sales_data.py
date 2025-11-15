@@ -4,8 +4,9 @@ This module mirrors the simple cleaning behaviour used for customers and
 products: normalize headers to lowercase with underscores, strip whitespace
 from values, and drop fully-empty rows.
 """
-from pathlib import Path
+
 import csv
+from pathlib import Path
 
 
 def _normalize_header(name: str) -> str:
@@ -37,7 +38,7 @@ def prepare_sales_data(input_path, output_path):
             row = {}
             for k, v in raw_row.items():
                 nk = _normalize_header(k)
-                row[nk] = (v.strip() if v is not None else "")
+                row[nk] = v.strip() if v is not None else ""
             if any(value != "" for value in row.values()):
                 cleaned_rows.append(row)
 

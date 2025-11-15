@@ -5,8 +5,9 @@ starter repository. It normalizes header names (lowercase, underscores)
 and strips whitespace from values. Empty rows (all values blank) are
 removed.
 """
-from pathlib import Path
+
 import csv
+from pathlib import Path
 
 
 def _normalize_header(name: str) -> str:
@@ -39,7 +40,7 @@ def prepare_customers_data(input_path, output_path):
             row = {}
             for k, v in raw_row.items():
                 nk = _normalize_header(k)
-                row[nk] = (v.strip() if v is not None else "")
+                row[nk] = v.strip() if v is not None else ""
             # keep row if any value non-empty
             if any(value != "" for value in row.values()):
                 cleaned_rows.append(row)

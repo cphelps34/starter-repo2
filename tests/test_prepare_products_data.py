@@ -1,6 +1,6 @@
 import csv
-import sys
 import os
+import sys
 
 # Ensure `src/` is on sys.path so tests can import the package locally.
 tests_dir = os.path.dirname(__file__)
